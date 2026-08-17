@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Plextop · door</title>
+<style>
+@font-face {
+  font-family: "OpenDyslexic3";
+  src: url("/fonts/OpenDyslexic3-Regular.ttf") format("truetype");
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "OpenDyslexic3";
+  src: url("/fonts/OpenDyslexic3-Bold.ttf") format("truetype");
+  font-weight: 700; font-style: normal; font-display: swap;
+}
+:root {
+  --bg: #100e08; --panel: #1a160c; --line: #5a4a22;
+  --text: #f4edcf; --muted: #b8a878; --gold: #e0be3e; --hot: #ffb454;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+  font: 15px/1.4 "OpenDyslexic3", "Segoe UI", system-ui, sans-serif; }
+body { display: flex; flex-direction: column; min-height: 100%; padding: 10px 12px 14px; }
+h1 { margin: 0 0 4px; font-size: 16px; color: var(--gold); letter-spacing: .03em; }
+.note { color: var(--muted); font-size: 12px; margin: 0 0 10px; }
+.doors { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+button {
+  appearance: none; cursor: pointer;
+  border: 1.5px solid rgba(224,190,62,.45); background: #17150d;
+  color: var(--gold); font: inherit; font-weight: 700; font-size: 13px;
+  padding: 7px 12px; border-radius: 8px;
+}
+button:hover { border-color: var(--gold); color: var(--text); }
+button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+button.lantern { color: #5dff8a; border-color: rgba(61,204,106,.4); background: #0a120e; }
+.pins { display: flex; flex-wrap: wrap; gap: 6px; }
+.pin {
+  border: 1px solid var(--line); background: var(--panel);
+  color: var(--text); font-weight: 700; font-size: 12px;
+  padding: 6px 10px; border-radius: 7px;
+}
+.pin[disabled] { opacity: .45; cursor: default; }
+.msg { margin-top: auto; font-size: 12px; color: var(--muted); min-height: 1.2em; }
+.msg.ok { color: #9adf6a; }
+.msg.err { color: #ff9b5e; }
+</style>
+</head>
+<body>
+  <h1>Plextop</h1>
+  <p class="note" id="note">Door only. Not the Plextop host. AyTree is out. Launch anything you pinned.</p>
+  <div class="doors">
+    <button type="button" id="openHost" title="Open the real Plextop window">Open Plextop</button>
+    <button type="button" class="lantern" id="openLantern" title="Script Launch stays on its own port. This only starts the door.">Open Lantern</button>
+  </div>
+  <div class="pins" id="pins"></div>
+  <p class="msg" id="msg"></p>
+<script>
+(function () {
+  var qs = new URLSearchParams(location.search || "");
+  var slug = qs.get("profile") || "Now";
+  var msg = document.getElementById("msg");
+  var pins = document.getElementById("pins");
+  var note = document.getElementById("note");
+
+  function say(t, kind) {
+    msg.textContent = t || "";
+    msg.className = "msg" + (kind ? " " + kind : "");
+  }
+
+  async function post(body) {
+    var r = await fetch("/api/plextop/launch", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    return r.json();
+  }
+
+  async function load() {
+    try {
+      var r = await fetch("/api/plextop?profile=" + encodeURIComponent(slug), { cache: "no-store" });
+      var j = await r.json();
+      if (!j || !j.ok) {
+        say((j && j.error) || "inventory offline", "err");
+        return;
+      }
+      note.textContent = "Door only. Profile " + (j.profile || slug) +
+        ". Pins live on the Desktop. Host is not loaded here.";
+      pins.innerHTML = "";
+      (j.pins || []).forEach(function (p) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "pin";
+        b.textContent = p.name || p.file;
+        b.title = p.target || p.file;
+        b.addEventListener("click", async function () {
+          say("launching…");
+          var out = await post({ kind: "pin", file: p.file, profile: slug });
+          say(out.ok ? ("opened " + (p.name || "")) : (out.error || "failed"), out.ok ? "ok" : "err");
+        });
+        pins.appendChild(b);
+      });
+      if (!(j.pins || []).length) {
+        var empty = document.createElement("button");
+        empty.type = "button";
+        empty.className = "pin";
+        empty.disabled = true;
+        empty.textContent = "no pins yet";
+        pins.appendChild(empty);
+      }
+    } catch (e) {
+      say(String(e), "err");
+    }
+  }
+
+  document.getElementById("openHost").onclick = async function () {
+    say("opening Plextop…");
+    var out = await post({ kind: "host", profile: slug });
+    if (out && out.fallback) {
+      say("host failed — opened your Desktop launcher folder", "ok");
+    } else {
+      say(out.ok ? "Plextop launched" : (out.error || "failed — use the tiles"), out.ok ? "ok" : "err");
+    }
+  };
+  document.getElementById("openLantern").onclick = async function () {
+    say("opening Lantern…");
+    var out = await post({ kind: "lantern" });
+    say(out.ok ? "Lantern launched (own window)" : (out.error || "failed"), out.ok ? "ok" : "err");
+  };
+  load();
+})();
+</script>
+</body>
+</html>
